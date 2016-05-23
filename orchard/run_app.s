@@ -70,11 +70,11 @@
         .equ bss_end,0x10           /* End of BSS in RAM */
         .equ entry,0x14             /* Address to jump to */
         .equ magic,0x18             /* 32-bit signature, defined below */
-        .equ reserved1,0x1c
+        .equ version,0x1c           /* BCD version number */
         .equ init_array_start,0x20  /* C++ constructor start */
         .equ init_array_end,0x24    /* C++ constructor end */
-        .equ reserved2,0x28
-        .equ reserved3,0x2c
+        .equ heap_start,0x28        /* Start of the heap offset */
+        .equ heap_end,0x2c          /* End of the heap offset */
 
 
 /*===========================================================================*/
@@ -92,8 +92,12 @@
                 .func Run_App
                 .global Run_App
 Run_App:
+
                 /* Interrupts are globally masked initially.*/
                 cpsid   i
+
+                /* Save the struct in a register that won't get clobbered.*/
+                mov     r7, r0
 
                 /* PSP stack pointers initialization.*/
                 ldr     r1, =__ram0_end__
@@ -107,9 +111,9 @@ Run_App:
 
                 /* Data initialization. Note, it assumes that the DATA size
                   is a multiple of 4 so the linker file must ensure this.*/
-                ldr     r1, [r0, #data_load_start]
-                ldr     r2, [r0, #data_start]
-                ldr     r3, [r0, #data_end]
+                ldr     r1, [r7, #data_load_start]
+                ldr     r2, [r7, #data_start]
+                ldr     r3, [r7, #data_end]
 dloop:
                 cmp     r2, r3
                 bge     enddloop
@@ -123,8 +127,8 @@ enddloop:
                 /* BSS initialization. Note, it assumes that the DATA size
                   is a multiple of 4 so the linker file must ensure this.*/
                 movs    r3, #0
-                ldr     r1, [r0, #bss_start]
-                ldr     r2, [r0, #bss_end]
+                ldr     r1, [r7, #bss_start]
+                ldr     r2, [r7, #bss_end]
 bloop:
                 cmp     r1, r2
                 bge     endbloop
@@ -133,9 +137,22 @@ bloop:
                 b       bloop
 endbloop:
 
+                /* Configure the heap */
+                ldr     r1, [r7, #heap_start]
+                ldr     r2, =os_heap_start
+                str     r1, [r2]
+
+                ldr     r1, [r7, #heap_end]
+                ldr     r2, =os_heap_end
+                str     r1, [r2]
+
+                /* Interrupts must be enabled for SVC to work */
+                /* Constructors may call SVC. */
+                cpsie i
+
                 /* Constructors invocation.*/
-                ldr     r4, [r0, #init_array_start]
-                ldr     r5, [r0, #init_array_end]
+                ldr     r4, [r7, #init_array_start]
+                ldr     r5, [r7, #init_array_end]
 initloop:
                 cmp     r4, r5
                 bge     endinitloop
@@ -145,12 +162,9 @@ initloop:
                 b       initloop
 endinitloop:
 
-                /* Interrupts must be enabled for SVC to work */
-                cpsie i
-
-                /* Main program invocation, r0 contains the returned value.*/
-                ldr     r0, [r0, #entry]
-                bx      r0
+                /* Main program invocation, r7 contains the returned value.*/
+                ldr     r7, [r7, #entry]
+                bx      r7
                 .endfunc
                 .type Run_App, %function
                 .size Run_App, .-Run_App

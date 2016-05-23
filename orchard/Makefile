@@ -3,14 +3,14 @@
 # NOTE: Can be overridden externally.
 #
 
-CH_USE_RT = no
+CH_USE_RT = TRUE
 ifeq ($(CH_USE_RT),)
 	CH_USE_RT=FALSE
 endif
 
 # Compiler options here.
 ifeq ($(USE_OPT),)
-  USE_OPT = -O3 -ggdb -fomit-frame-pointer -falign-functions=16 -nostdlib -mfloat-abi=soft -mfp16-format=none
+  USE_OPT = -Os -ggdb -fomit-frame-pointer -falign-functions=16 -nostdlib -mfloat-abi=soft -mfp16-format=none -fsingle-precision-constant
 endif
 
 # C specific options here (added to USE_OPT).
@@ -20,7 +20,7 @@ endif
 
 # C++ specific options here (added to USE_OPT).
 ifeq ($(USE_CPPOPT),)
-  USE_CPPOPT = -fno-rtti
+  USE_CPPOPT = -fno-rtti -fno-exceptions
 endif
 
 # Enable this if you want the linker to remove unused code and data
@@ -30,7 +30,7 @@ endif
 
 # Linker extra options here.
 ifeq ($(USE_LDOPT),)
-  USE_LDOPT = 
+  USE_LDOPT =
 endif
 
 # Enable this if you want link time optimizations (LTO)
@@ -93,17 +93,14 @@ include $(CHIBIOS)/os/common/ports/ARMCMx/compilers/GCC/mk/startup_kl02x.mk
 # HAL-OSAL files (optional).
 include $(CHIBIOS)/os/hal/hal.mk
 include $(CHIBIOS)/os/hal/ports/KINETIS/KL02x/platform.mk
-include $(CHIBIOS)/os/hal/boards/CHIBITRONICS_ESPLANADE/board.mk 
-include $(CHIBIOS)/os/hal/osal/nil/osal.mk
+include $(CHIBIOS)/os/hal/boards/CHIBITRONICS_ESPLANADE/board.mk
+include $(CHIBIOS)/os/hal/osal/rt/osal.mk
 # RTOS files (optional).
-include $(CHIBIOS)/os/nil/nil.mk
-include $(CHIBIOS)/os/nil/ports/ARMCMx/compilers/GCC/mk/port_v6m.mk
-# Other files (optional).
-#include $(CHIBIOS)/test/nil/test.mk
+include $(CHIBIOS)/os/rt/rt.mk
+include $(CHIBIOS)/os/rt/ports/ARMCMx/compilers/GCC/mk/port_v6m.mk
 
-#C90TFS Freescale Flash drivers
-LIBC90TFS = $(CHIBIOS)/ext/C90TFS
-include $(LIBC90TFS)/build.mk
+QFPLIB = $(CHIBIOS)/ext/qfplib-20160419
+include $(QFPLIB)/build.mk
 
 # Define linker script file here
 LDSCRIPT= $(STARTUPLD)/KL02P20.ld
@@ -111,13 +108,14 @@ LDSCRIPT= $(STARTUPLD)/KL02P20.ld
 # C sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.
 CSRC = main.c \
+       esplanade_demod.c \
        orchard-vectors.c \
        gitversion.c \
-       analog.c \
-       demod.c \
+       esplanade_analog.c \
+       esplanade_updater.c \
+       esplanade_mac.c \
+       esplanade_app.c \
        murmur3.c \
-       updater.c \
-       mac.c \
        flash.c \
        $(STARTUPSRC) \
        $(PORTSRC) \
@@ -127,21 +125,25 @@ CSRC = main.c \
        $(PLATFORMSRC) \
        $(BOARDSRC) \
        printf.c \
+       ws2812b.c \
        $(CHIBIOS)/os/hal/lib/streams/chprintf.c \
-       $(LIBC90TFSSRC) \
+       $(CHIBIOS)/os/hal/lib/streams/memstreams.c \
        __aeabi.c \
-
-# Include the shell, and commands, for full OS.
-ifeq ($(CH_USE_RT),TRUE)
-CSRC += $(CHIBIOS)/os/various/shell.c \
-        $(wildcard cmd-*.c) \
-        $(wildcard prot-*.c)
-endif
+       math.c \
+       usbphy.c \
+       usbmac.c \
+       arduino-chibios.c \
+       arduino-flash.c \
+       arduino-i2c.c \
+       arduino-io.c \
+       arduino-irqs.c \
+       arduino-math.c \
+       arduino-time.c \
+       arduino-usb.c \
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.
-CPPSRC = syscalls.cpp \
-         $(wildcard arduino-*.cpp)
+CPPSRC =
 
 # C sources to be compiled in ARM mode regardless of the global setting.
 # NOTE: Mixing ARM and THUMB mode enables the -mthumb-interwork compiler
@@ -164,14 +166,18 @@ TCSRC =
 TCPPSRC =
 
 # List ASM source files here
-ASMSRC = $(STARTUPASM) $(PORTASM) $(OSALASM) \
-         run_app.s svc_handler.s
+ASMSRC += $(STARTUPASM) $(PORTASM) $(OSALASM) \
+          run_app.s svc_handler.s ws2812b_ll.s \
+          thumb1_case.s \
+          hardfault_handler.s memmanage_handler.s \
+          usagefault_handler.s busfault_handler.s \
+          usbphy_ll.s \
+          syscalls-os.s \
 
 INCDIR = $(STARTUPINC) $(KERNINC) $(PORTINC) $(OSALINC) \
          $(HALINC) $(PLATFORMINC) $(BOARDINC) $(TESTINC) \
          $(CHIBIOS)/os/various \
-	 $(CHIBIOS)/os/hal/lib/streams \
-	 $(LIBC90TFSINC)
+         $(CHIBIOS)/os/hal/lib/streams \
 
 #
 # Project, sources and paths
@@ -207,7 +213,7 @@ AOPT =
 TOPT = -mthumb -DTHUMB -msoft-float
 
 # Define C warning options here
-CWARN = -Wall -Wextra -Wstrict-prototypes # -Wundef 
+CWARN = -Wall -Wextra -Wstrict-prototypes # -Wundef
 
 # Define C++ warning options here
 CPPWARN = -Wall -Wextra # -Wundef
@@ -233,7 +239,12 @@ UINCDIR =
 ULIBDIR =
 
 # List all user libraries here
-ULIBS = lib/armv6-m-libgcc.a lib/libc-nano-armv6-m.a
+ULIBS = lib/libstdc++-armv6-m.a \
+        lib/libaeabi-cortexm0.a \
+        lib/libunaligned-funcs.a \
+        lib/libmemmove.a \
+        lib/libmemcpy.a \
+        lib/libcrtbegin.a \
 
 #
 # End of user defines
@@ -251,7 +262,42 @@ include $(RULESPATH)/rules.mk
 gitversion.c: $(CHIBIOS)/.git/HEAD $(CHIBIOS)/.git/index
 	echo "const char *gitversion = \"$(shell git rev-parse HEAD)\";" > $@
 
-dsptables: dsptable_gen.c demod.h
-	@echo
-	gcc -I. $(IINCDIR) -lm $< -o $@
+dsptables.h: dsptables
+ifeq ($(USE_VERBOSE_COMPILE),yes)
 	./dsptables
+else
+	@echo Generating DSP tables $@
+	@./dsptables
+endif
+
+dsptables: dsptable_gen.c
+ifeq ($(USE_VERBOSE_COMPILE),yes)
+	gcc -I. $(IINCDIR) -lm $< -o $@
+else
+	@echo Building DSP table generator $@
+	@gcc -I. $(IINCDIR) -lm $< -o $@
+endif
+
+# Build a .symbol file, to enable OS/App debugging
+POST_MAKE_ALL_RULE_HOOK: $(BUILDDIR)/$(PROJECT).symbol
+
+# Suppress a cryptic, harmless warning about copying mstack
+%.symbol: %.elf
+ifeq ($(USE_VERBOSE_COMPILE),yes)
+	$(CP) --only-keep-debug $< $@ 2> /dev/null
+else
+	@echo Creating $@
+	@$(CP) --only-keep-debug $< $@ 2> /dev/null
+endif
+
+# These must go down here, due to variable expansion.
+# Add special command line parameters to certain files.
+$(OBJDIR)/esplanade_demod.o : USE_COPT += -O3
+$(OBJDIR)/esplanade_analog.o : USE_COPT += -O3
+$(OBJDIR)/esplanade_mac.o : USE_COPT += -O3
+$(OBJDIR)/esplanade_updater.o : USE_COPT += -O3
+
+# Debug hook - enable printing Makefile variables
+# by running e.g. "make print-OUTFILES"
+print-%:
+	@echo '$*=$($*)'

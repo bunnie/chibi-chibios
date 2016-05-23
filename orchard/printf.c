@@ -19,7 +19,63 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 */
 
-#include "nil.h"
+#include "hal.h"
+
+#if 1
+#include "chprintf.h"
+#include "memstreams.h"
+#include "orchard.h"
+
+extern void *stream;
+
+void init_printf(void* putp,void (*putf) (void*,char)) {
+  (void)putp;
+  (void)putf;
+
+  return;
+}
+
+int printf(const char *fmt, ...) {
+  va_list ap;
+  int formatted_bytes;
+
+  va_start(ap, fmt);
+  formatted_bytes = chvprintf(stream, fmt, ap);
+  va_end(ap);
+
+  return formatted_bytes;
+}
+
+int putchar(int c) {
+  chSequentialStreamPut(stream_driver, c);
+  return c;
+}
+
+int getchar(void) {
+  return chSequentialStreamGet(stream_driver);
+}
+
+int cangetchar(void) {
+  return !sdGetWouldBlock(stream);
+}
+
+int puts(const char *s) {
+
+  return chprintf(stream, "%s", s);
+}
+
+void tfp_printf(const char *fmt, ...) {
+  va_list ap;
+  extern void *stream;
+
+  va_start(ap, fmt);
+  chvprintf(stream, fmt, ap);
+  va_end(ap);
+
+  return;
+}
+
+#else
 #include "printf.h"
 
 typedef void (*putcf) (void*,char);
@@ -231,3 +287,4 @@ void tfp_sprintf(char* s,char *fmt, ...)
   putcp(&s,0);
   va_end(va);
 }
+#endif
