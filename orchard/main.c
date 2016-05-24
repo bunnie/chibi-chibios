@@ -62,9 +62,7 @@ static void phy_demodulate(void) {
   int frames;
 
 #if OSCOPE_PROFILING // pulse a gpio to easily measure CPU load of demodulation
-  GPIOB->PSOR |= (1 << 6);   // sets to high
-  GPIOB->PCOR |= (1 << 6);   // clears to low
-
+  GPIOA->PSOR |= (1 << 12);   // sets to high
   // this is happening once every 1.748ms with NB_FRAMES = 16, NB_SAMPLES = 8
   // computed about 0.0413ms -> 41.3us per call overhead for OS required ~2.5% overhead
 #endif
@@ -76,6 +74,10 @@ static void phy_demodulate(void) {
       FSKdemod(dm_buf + (frames * NB_SAMPLES), NB_SAMPLES, putBitMac);
     }
 //  }
+
+#if OSCOPE_PROFILING // pulse a gpio to easily measure CPU load of demodulation
+  GPIOA->PCOR |= (1 << 12);   // clears to low
+#endif
 
   /* If we overflow, print a message. */
   if (dataReadyFlag > 1) {
@@ -113,6 +115,7 @@ void demod_loop(void) {
           dm_buf[i] = (int16_t) (((int16_t) bufloc[i]) - 2048);
         }
         // call handler, which includes the demodulation routine
+	dataReadyFlag--;
         phy_demodulate();
       }
 
@@ -147,7 +150,8 @@ void demod_loop(void) {
       pkt_len = CTRL_LEN;
     }
 
-    for (i = 0; i < 16; i++) { // abridged dump
+    //    for (i = 0; i < 16; i++) { // abridged dump
+    for (i = 0; i < pkt_len; i++) { // abridged dump
       if (i % 32 == 0) {
         tfp_printf( "\n\r" );
       }
