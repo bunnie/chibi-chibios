@@ -16,8 +16,6 @@
 #define COS_BITS   14
 #define COS_BASE   (1 << COS_BITS)
 
-//#define F_LO   10400
-//#define F_HI   15000
 #define F_LO   8666
 #define F_HI   12500
 

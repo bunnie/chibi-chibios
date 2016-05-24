@@ -5,6 +5,7 @@
 #include "kl02.h"
 #include "memio.h"
 #include "printf.h"
+#include "lptmr.h"
 
 static int pin_to_port(int pin, ioportid_t *port, uint8_t *pad) {
 
@@ -38,15 +39,39 @@ static int pin_to_port(int pin, ioportid_t *port, uint8_t *pad) {
     return 0;
   }
 
-  if (pin == 0) {
+  if (pin == D0) {
     *port = IOPORT2;
     *pad = 0;
     return 0;
   }
 
-  if (pin == 1) {
+  if (pin == D1) {
     *port = IOPORT1;
     *pad = 7;
+    return 0;
+  }
+
+  if (pin == LED_BUILTIN_RGB) {
+    *port = IOPORT1;
+    *pad = 6;
+    return 0;
+  }
+
+  if (pin == LED_BUILTIN_RED) {
+    *port = IOPORT1;
+    *pad = 5;
+    return 0;
+  }
+
+  if (pin == LED_BUILTIN_GREEN) {
+    *port = IOPORT2;
+    *pad = 6;
+    return 0;
+  }
+
+  if (pin == MODE_BUTTON) {
+    *port = IOPORT2;
+    *pad = 1;
     return 0;
   }
 
@@ -172,7 +197,7 @@ void analogReference(enum analog_reference_type type) {
   return;
 }
 
-static uint32_t pin_to_adc(int pin) {
+static int pin_to_adc(int pin) {
 
   if (pin == A0)
     return ADC_AD9;
@@ -193,7 +218,7 @@ static uint32_t pin_to_adc(int pin) {
   if (pin == A8)
     return ADC_VREFSL;
 
-  return 0;
+  return -1;
 }
 
 static void mux_as_adc(int pin) {
@@ -211,12 +236,17 @@ int analogRead(int pin) {
 
   msg_t result;
   adcsample_t sample;
+  int adc_num = pin_to_adc(pin);
+
+  if (adc_num == -1)
+    return 0;
+
   ADCConversionGroup arduinogrp = {
     0, // circular buffer mode? no.
     1, // just one channel
     NULL,  // callback
     NULL,  // error callback
-    pin_to_adc(pin),
+    adc_num,
     // CFG1 register
     // SYSCLK = 48MHz.
     // BUSCLK = SYSCLK / 4 = 12MHz
@@ -256,14 +286,41 @@ int analogRead(int pin) {
   return sample;
 }
 
+virtual_timer_t tone_timer;
+
+/* Timer callback.  Called from a virtual timer to stop the tone after
+ * a certain duration.
+ */
+static void stop_tone(void *par) {
+
+  noTone((uint32_t)par);
+}
 
 void tone(int pin, unsigned int frequency, unsigned long duration) {
+
+
+  ioportid_t port;
+  uint8_t pad;
+
+  if (pin_to_port(pin, &port, &pad))
+    return;
+
+  /* Ensure the pin is an output */
+  palSetPadMode(port, pad, PAL_MODE_OUTPUT_PUSHPULL);
+
+  /* Start up the low-power timer, which directly drives the port. */
+  startLptmr(port, pad, frequency);
+
+  /* Set up a timer callback to stop the tone. */
+  chVTSet(&tone_timer, MS2ST(duration), stop_tone, (void *)pin);
 
   return;
 }
 
 void noTone(int pin) {
 
+  (void)pin;
+  stopLptmr();
   return;
 }
 
